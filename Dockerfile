@@ -7,6 +7,6 @@ WORKDIR /deno-dir
 USER deno
 
 COPY . .
-RUN deno compile --allow-net --allow-env --output javadoc-publish main.ts
+RUN deno cache *.ts
 
-CMD ["./javadoc-publish"]
+CMD ["task", "start"]

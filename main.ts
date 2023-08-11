@@ -1,14 +1,13 @@
-import { S3Client } from "s3/mod.ts";
-import { ZipReader } from "zip/index.js"
+import "std/dotenv/load.ts";
 
-const s3 = new S3Client({
+const s3Params = {
 	endPoint: Deno.env.get("B2_ENDPOINT") || "",
 	region: Deno.env.get("B2_REGION") || "",
 	accessKey: Deno.env.get("B2_KEY"),
 	secretKey: Deno.env.get("B2_SECRET"),
 	bucket: Deno.env.get("B2_BUCKET"),
 	pathStyle: false
-});
+};
 
 async function handleRequest(req: Request): Promise<Response> {
 	const auth = req.headers.get("Authorization");
@@ -26,26 +25,21 @@ async function handleRequest(req: Request): Promise<Response> {
 	}
 
 	const url = new URL(req.url);
-	const regex = /^\/repository\/release\/org\/quiltmc\/([^\/]+)\/([^\/]+)\+([^\/]+)\/(.*)$/
+	const regex = /\/([^\/]+)\/([^\/]+)\/([^\/]+)/
 	const found = url.pathname.match(regex);
 
 	if (found === null) {
 		return new Response("Invalid path", { status: 400 });
 	}
 
+	const worker = new Worker(new URL("./worker.ts", import.meta.url).href, { type: "module" });
 	const [, name, mcVersion, libVersion] = found;
-	const reader = new ZipReader(req.body);
-	const prefix = `${name}/${mcVersion}/${libVersion}/`;
+	const prefix = `${name}/${mcVersion}/${libVersion}`;
+	const body = new Uint8Array(await req.arrayBuffer());
 
-	for await (const entry of reader.getEntriesGenerator()) {
-		if (!entry.directory && entry.getData !== undefined) {
-			const stream = new TransformStream();
-			entry.getData(stream.writable);
-			await s3.putObject(prefix + entry.filename, stream.readable);
-		}
-	}
+	worker.postMessage({ body, prefix, s3Params });
 
-	return new Response("Uploaded!");
+	return new Response("Uploading");
 }
 
 Deno.serve(handleRequest);
